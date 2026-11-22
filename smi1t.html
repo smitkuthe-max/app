@@ -1,0 +1,606 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Rail Rush 3D</title>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+ overflow:hidden;background:#101a2c;color:white;
+ font-family:Arial,sans-serif;touch-action:none;
+}
+#game{position:fixed;inset:0}
+canvas{display:block}
+.hud{
+ position:absolute;top:15px;left:15px;right:15px;
+ display:flex;justify-content:space-between;pointer-events:none;
+}
+.scorebox{
+ background:#071326cc;border:1px solid #ffffff30;
+ padding:12px 18px;border-radius:13px;
+ backdrop-filter:blur(8px);
+}
+.scorebox small{color:#aebdd5;font-size:11px}
+.scorebox h2{font-size:23px;color:#ffda48;margin-top:3px}
+#high{color:#45e5d1}
+.overlay{
+ position:absolute;inset:0;display:flex;
+ align-items:center;justify-content:center;
+ background:#061020aa;z-index:5;padding:20px;
+}
+.card{
+ width:min(420px,100%);text-align:center;
+ background:linear-gradient(145deg,#182c4c,#10182d);
+ border:1px solid #ffffff30;border-radius:22px;
+ padding:30px 22px;box-shadow:0 20px 70px #0009;
+}
+.card h1{font-size:35px;color:#ffda48;margin-bottom:12px}
+.card p{color:#c1cce0;line-height:1.6;margin-bottom:20px}
+button{
+ border:0;border-radius:10px;padding:13px 23px;
+ background:#ffbd31;color:#20202a;font-weight:900;
+ cursor:pointer;font-size:15px;
+}
+button:active{transform:scale(.96)}
+.secondary{background:#344765;color:white;margin-top:10px}
+#pause{
+ position:absolute;right:16px;top:105px;
+ background:#071326cc;color:white;border:1px solid #ffffff40;
+ padding:10px 15px;pointer-events:auto;
+}
+#controls{
+ position:absolute;bottom:22px;left:0;right:0;
+ display:flex;justify-content:space-between;padding:0 22px;
+ pointer-events:none;
+}
+.control-group{display:flex;gap:10px}
+.control{
+ width:57px;height:57px;border-radius:50%;
+ background:#071326bb;color:white;
+ border:1px solid #ffffff70;font-size:22px;
+ pointer-events:auto;touch-action:none;
+}
+.jump{background:#df9424cc}
+.slide{background:#247bbdcc}
+#hint{
+ position:absolute;bottom:95px;left:0;right:0;
+ text-align:center;color:white;text-shadow:0 2px 5px black;
+ font-size:12px;pointer-events:none;
+}
+.hidden{display:none!important}
+@media(min-width:800px){
+ #controls{opacity:.75}
+}
+</style>
+</head>
+
+<body>
+<div id="game"></div>
+
+<div class="hud">
+ <div class="scorebox">
+  <small>SCORE</small>
+  <h2 id="score">0</h2>
+ </div>
+ <div class="scorebox">
+  <small>COINS</small>
+  <h2 id="coins">0</h2>
+ </div>
+ <div class="scorebox">
+  <small>BEST</small>
+  <h2 id="high">0</h2>
+ </div>
+</div>
+
+<button id="pause" class="hidden">Ⅱ</button>
+
+<div id="hint">← → Move | ↑ Jump | ↓ Slide</div>
+
+<div id="controls">
+ <div class="control-group">
+  <button class="control" id="left">◀</button>
+  <button class="control" id="right">▶</button>
+ </div>
+ <div class="control-group">
+  <button class="control jump" id="jump">⬆</button>
+  <button class="control slide" id="slide">⬇</button>
+ </div>
+</div>
+
+<div class="overlay" id="startScreen">
+ <div class="card">
+  <h1>🚆 RAIL RUSH 3D</h1>
+  <p>Run through the railway, dodge trains, jump over barriers and collect golden coins!</p>
+  <p>🏃 Three lanes • 💰 Coins • 🚧 Obstacles</p>
+  <button id="start">START RUNNING</button>
+  <p style="font-size:11px;margin:18px 0 0">
+   Keyboard: Arrow keys or WASD<br>
+   Mobile: Use the buttons or swipe
+  </p>
+ </div>
+</div>
+
+<div class="overlay hidden" id="pauseScreen">
+ <div class="card">
+  <h1>⏸ PAUSED</h1>
+  <p>Take a break. Your run is waiting!</p>
+  <button id="resume">RESUME</button>
+ </div>
+</div>
+
+<div class="overlay hidden" id="gameOver">
+ <div class="card">
+  <h1>GAME OVER!</h1>
+  <p>Your run has ended.</p>
+  <h2 id="finalScore" style="color:#ffda48;margin-bottom:10px">Score: 0</h2>
+  <p id="finalCoins">Coins: 0</p>
+  <button id="again">PLAY AGAIN</button>
+ </div>
+</div>
+
+<script type="module">
+import * as THREE from
+'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+// BASIC SETUP
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8ac9ed);
+scene.fog=new THREE.Fog(0x8ac9ed,35,100);
+
+const camera=new THREE.PerspectiveCamera(
+ 65,innerWidth/innerHeight,0.1,150
+);
+camera.position.set(0,5.5,11);
+camera.lookAt(0,1,-5);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.getElementById('game').appendChild(renderer.domElement);
+
+// LIGHTING
+scene.add(new THREE.HemisphereLight(0xffffff,0x53647c,2));
+
+const sun=new THREE.DirectionalLight(0xffffff,2.2);
+sun.position.set(-8,15,8);
+sun.castShadow=true;
+scene.add(sun);
+
+// MATERIALS
+const mat=(color,roughness=.8)=>new THREE.MeshStandardMaterial({
+ color,roughness
+});
+
+const grassMat=mat(0x4d9b51);
+const railMat=mat(0x858e9c,.3);
+const sleeperMat=mat(0x543c30);
+const goldMat=new THREE.MeshStandardMaterial({
+ color:0xffc928,metalness:.75,roughness:.2
+});
+
+// GROUND
+const ground=new THREE.Mesh(
+ new THREE.PlaneGeometry(200,200),
+ grassMat
+);
+ground.rotation.x=-Math.PI/2;
+ground.position.y=-.15;
+ground.position.z=-35;
+ground.receiveShadow=true;
+scene.add(ground);
+
+// RAILWAY TRACKS
+const trackParts=[];
+for(let lane=-1;lane<=1;lane++){
+ const x=lane*2.5;
+
+ for(let side of [-.7,.7]){
+  const rail=new THREE.Mesh(
+   new THREE.BoxGeometry(.13,.15,100),
+   railMat
+  );
+  rail.position.set(x+side,.04,-30);
+  scene.add(rail);
+ }
+
+ for(let z=-75;z<15;z+=3){
+  const sleeper=new THREE.Mesh(
+   new THREE.BoxGeometry(1.7,.17,.55),
+   sleeperMat
+  );
+  sleeper.position.set(x,0,z);
+  scene.add(sleeper);
+  trackParts.push(sleeper);
+ }
+}
+
+// SIDE ENVIRONMENT
+const scenery=[];
+for(let i=0;i<40;i++){
+ for(let side of [-1,1]){
+  const height=2+Math.random()*7;
+  const building=new THREE.Mesh(
+   new THREE.BoxGeometry(2+Math.random()*3,height,3),
+   mat([0x4c6684,0x687b91,0x607e70,0x8b6a62][i%4])
+  );
+  building.position.set(
+   side*(8+Math.random()*5),
+   height/2,
+   -i*4
+  );
+  scene.add(building);
+  scenery.push(building);
+ }
+}
+
+// PLAYER
+const player=new THREE.Group();
+scene.add(player);
+
+const skin=mat(0xffbd83);
+const shirt=mat(0x2468d9);
+const pants=mat(0x202b50);
+const shoes=mat(0xeeeeee);
+
+function box(parent,w,h,d,material,x,y,z){
+ const m=new THREE.Mesh(
+  new THREE.BoxGeometry(w,h,d),material
+ );
+ m.position.set(x,y,z);
+ m.castShadow=true;
+ m.receiveShadow=true;
+ parent.add(m);
+ return m;
+}
+
+box(player,.65,.8,.4,shirt,0,1.15,0);
+
+const head=new THREE.Mesh(
+ new THREE.SphereGeometry(.27,16,16),skin
+);
+head.position.y=1.75;
+head.castShadow=true;
+player.add(head);
+
+box(player,.25,.7,.27,pants,-.18,.4,0);
+box(player,.25,.7,.27,pants,.18,.4,0);
+box(player,.2,.17,.35,shoes,-.18,.06,.06);
+box(player,.2,.17,.35,shoes,.18,.06,.06);
+
+const arm1=box(player,.2,.65,.22,skin,-.48,1.2,0);
+const arm2=box(player,.2,.65,.22,skin,.48,1.2,0);
+
+player.position.set(0,0,4);
+
+// GAME VARIABLES
+let running=false;
+let paused=false;
+let lane=0;
+let targetX=0;
+let jumpVelocity=0;
+let playerY=0;
+let sliding=0;
+let speed=18;
+let distance=0;
+let coinCount=0;
+let score=0;
+let highScore=Number(localStorage.railHigh||0);
+let objects=[];
+let spawnTimer=0;
+let coinTimer=0;
+let clock=new THREE.Clock();
+
+const $=id=>document.getElementById(id);
+$('high').textContent=highScore;
+
+function updateHUD(){
+ score=Math.floor(distance*2)+coinCount*10;
+ $('score').textContent=score;
+ $('coins').textContent=coinCount;
+ $('high').textContent=highScore;
+}
+
+// OBJECT CREATION
+function createObstacle(type,laneIndex,z){
+ const group=new THREE.Group();
+ const x=laneIndex*2.5;
+
+ if(type==='train'){
+  const body=box(group,1.9,3,3.8,
+   mat(0xd84942),0,1.5,0);
+  box(group,1.5,.8,.1,mat(0x9deaff),0,2,-1.95);
+  box(group,.3,.3,.12,goldMat,-.6,.5,-1.97);
+  box(group,.3,.3,.12,goldMat,.6,.5,-1.97);
+ }else if(type==='barrier'){
+  box(group,1.65,.7,.45,mat(0xe65a35),0,.35,0);
+  box(group,1.8,.15,.55,mat(0xffdf4b),0,.55,0);
+ }else{
+  box(group,1.9,.18,.35,mat(0xe8b33e),0,2,0);
+  box(group,.12,2,.12,railMat,-.85,1,0);
+  box(group,.12,2,.12,railMat,.85,1,0);
+ }
+ group.position.set(x,0,z);
+ scene.add(group);
+ objects.push({mesh:group,type,lane:laneIndex,collected:false});
+}
+
+function createCoin(laneIndex,z){
+ const coin=new THREE.Mesh(
+  new THREE.TorusGeometry(.32,.1,10,20),
+  goldMat
+ );
+ coin.position.set(laneIndex*2.5,1.25,z);
+ coin.rotation.x=Math.PI/2;
+ scene.add(coin);
+ objects.push({
+  mesh:coin,type:'coin',lane:laneIndex,collected:false
+ });
+}
+
+// SPAWNING
+function spawnObjects(){
+ const laneIndex=Math.floor(Math.random()*3)-1;
+ const r=Math.random();
+
+ if(r<.35){
+  createObstacle('train',laneIndex,-65);
+ }else if(r<.7){
+  createObstacle('barrier',laneIndex,-65);
+ }else{
+  createObstacle('overhead',laneIndex,-65);
+ }
+
+ if(Math.random()<.9){
+  const coinLane=Math.floor(Math.random()*3)-1;
+  for(let i=0;i<5;i++){
+   createCoin(coinLane,-42-i*2);
+  }
+ }
+}
+
+// MOVEMENT
+function moveLeft(){
+ if(!running||paused)return;
+ lane=Math.max(-1,lane-1);
+ targetX=lane*2.5;
+}
+
+function moveRight(){
+ if(!running||paused)return;
+ lane=Math.min(1,lane+1);
+ targetX=lane*2.5;
+}
+
+function jump(){
+ if(!running||paused||playerY>0||sliding>0)return;
+ jumpVelocity=10;
+}
+
+function slide(){
+ if(!running||paused||playerY>0)return;
+ sliding=.65;
+}
+
+// KEYBOARD
+window.addEventListener('keydown',e=>{
+ if(e.repeat)return;
+
+ if(e.key==='ArrowLeft'||e.key==='a')moveLeft();
+ if(e.key==='ArrowRight'||e.key==='d')moveRight();
+ if(e.key==='ArrowUp'||e.key==='w'||e.key===' ')jump();
+ if(e.key==='ArrowDown'||e.key==='s')slide();
+
+ if(e.key==='Escape'||e.key==='p'){
+  if(running)togglePause();
+ }
+});
+
+// TOUCH BUTTONS
+$('left').addEventListener('pointerdown',moveLeft);
+$('right').addEventListener('pointerdown',moveRight);
+$('jump').addEventListener('pointerdown',jump);
+$('slide').addEventListener('pointerdown',slide);
+
+let touchStartX=0,touchStartY=0;
+renderer.domElement.addEventListener('touchstart',e=>{
+ touchStartX=e.touches[0].clientX;
+ touchStartY=e.touches[0].clientY;
+},{passive:true});
+
+renderer.domElement.addEventListener('touchend',e=>{
+ const dx=e.changedTouches[0].clientX-touchStartX;
+ const dy=e.changedTouches[0].clientY-touchStartY;
+ if(Math.abs(dx)>30){
+  dx>0?moveRight():moveLeft();
+ }else if(Math.abs(dy)>30){
+  dy<0?jump():slide();
+ }
+},{passive:true});
+
+// COLLISION
+function checkCollisions(){
+ for(const obj of objects){
+  if(obj.collected||obj.mesh.position.z>5||
+     obj.mesh.position.z<2.8)continue;
+
+  const sameLane=Math.abs(player.position.x-
+    obj.mesh.position.x)<1.15;
+
+  if(!sameLane)continue;
+
+  if(obj.type==='coin'){
+   obj.collected=true;
+   coinCount++;
+   scene.remove(obj.mesh);
+   updateHUD();
+   continue;
+  }
+
+  let safe=false;
+
+  if(obj.type==='barrier'&&playerY>.9)safe=true;
+  if(obj.type==='overhead'&&sliding>0)safe=true;
+
+  if(!safe){
+   endGame();
+   return;
+  }
+ }
+}
+
+// CLEAN OBJECTS
+function cleanObjects(){
+ objects=objects.filter(obj=>{
+  if(obj.collected||obj.mesh.position.z>12){
+   scene.remove(obj.mesh);
+   return false;
+  }
+  return true;
+ });
+}
+
+// MAIN LOOP
+function animate(){
+ requestAnimationFrame(animate);
+
+ const dt=Math.min(clock.getDelta(),.04);
+
+ if(running&&!paused){
+  distance+=speed*dt/10;
+  speed=Math.min(34,18+distance*.025);
+
+  spawnTimer+=dt;
+  if(spawnTimer>Math.max(.75,1.45-distance*.001)){
+   spawnObjects();
+   spawnTimer=0;
+  }
+
+  coinTimer+=dt;
+
+  // MOVE WORLD OBJECTS
+  objects.forEach(obj=>{
+   obj.mesh.position.z+=speed*dt;
+   if(obj.type==='coin'){
+    obj.mesh.rotation.y+=dt*4;
+   }
+  });
+
+  // MOVING TRACK
+  trackParts.forEach(part=>{
+   part.position.z+=speed*dt;
+   if(part.position.z>12)part.position.z-=90;
+  });
+
+  // SCENERY
+  scenery.forEach(building=>{
+   building.position.z+=speed*dt*.7;
+   if(building.position.z>15){
+    building.position.z-=160;
+   }
+  });
+
+  // PLAYER LANE MOVEMENT
+  player.position.x+=
+   (targetX-player.position.x)*Math.min(1,dt*12);
+
+  // JUMP PHYSICS
+  if(playerY>0||jumpVelocity>0){
+   playerY+=jumpVelocity*dt;
+   jumpVelocity-=25*dt;
+
+   if(playerY<0){
+    playerY=0;
+    jumpVelocity=0;
+   }
+  }
+
+  player.position.y=playerY;
+
+  // SLIDING
+  if(sliding>0)sliding-=dt;
+  const slideScale=sliding>0?.55:1;
+  player.scale.y+=(slideScale-player.scale.y)*Math.min(1,dt*15);
+
+  // RUNNING ANIMATION
+  const t=performance.now()*.012;
+  if(sliding<=0){
+   arm1.rotation.x=Math.sin(t)*.6;
+   arm2.rotation.x=-Math.sin(t)*.6;
+  }
+
+  // CAMERA FOLLOW
+  camera.position.x+=(player.position.x*.22-camera.position.x)*dt*3;
+  camera.lookAt(player.position.x*.2,1,-5);
+
+  checkCollisions();
+  cleanObjects();
+  updateHUD();
+ }
+
+ renderer.render(scene,camera);
+}
+
+// START / END
+function startGame(){
+ objects.forEach(o=>scene.remove(o.mesh));
+ objects=[];
+ lane=0;targetX=0;
+ player.position.set(0,0,4);
+ player.scale.y=1;
+ playerY=0;jumpVelocity=0;sliding=0;
+ speed=18;distance=0;coinCount=0;
+ spawnTimer=0;
+ score=0;
+ running=true;paused=false;
+ clock.getDelta();
+
+ $('startScreen').classList.add('hidden');
+ $('gameOver').classList.add('hidden');
+ $('pauseScreen').classList.add('hidden');
+ $('pause').classList.remove('hidden');
+ $('pause').textContent='Ⅱ';
+ updateHUD();
+}
+
+function endGame(){
+ if(!running)return;
+ running=false;
+ highScore=Math.max(highScore,score);
+ localStorage.railHigh=highScore;
+ $('high').textContent=highScore;
+ $('finalScore').textContent='Score: '+score;
+ $('finalCoins').textContent='Coins collected: '+coinCount;
+ $('gameOver').classList.remove('hidden');
+ $('pause').classList.add('hidden');
+}
+
+function togglePause(){
+ if(!running)return;
+ paused=!paused;
+ $('pauseScreen').classList.toggle('hidden',!paused);
+ $('pause').textContent=paused?'▶':'Ⅱ';
+ clock.getDelta();
+}
+
+$('start').onclick=startGame;
+$('again').onclick=startGame;
+$('pause').onclick=togglePause;
+$('resume').onclick=togglePause;
+
+// RESIZE
+window.addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
